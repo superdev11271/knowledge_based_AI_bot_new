@@ -3,7 +3,6 @@ import os
 import uuid
 from werkzeug.utils import secure_filename
 import mimetypes
-from datetime import datetime
 import sys
 sys.path.append('..')
 from sb.database_service import DocumentService
@@ -16,9 +15,6 @@ document = Blueprint("document", __name__)
 UPLOAD_FOLDER = Config.UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = Config.ALLOWED_EXTENSIONS
 MAX_FILE_SIZE = Config.MAX_FILE_SIZE
-
-# Ensure upload directory exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -120,6 +116,9 @@ def delete_document(document_id):
         
         # Delete file from filesystem
         file_path = document.get('file_path')
+        current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
+        app_dir = os.path.dirname(current_dir)
+        file_path = os.path.join(app_dir, file_path)
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
         
@@ -148,6 +147,9 @@ def delete_multiple_documents():
         for doc in documents:
             try:
                 file_path = doc.get('file_path')
+                current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
+                app_dir = os.path.dirname(current_dir)
+                file_path = os.path.join(app_dir, file_path)
                 if file_path and os.path.exists(file_path):
                     os.remove(file_path)
             except Exception:

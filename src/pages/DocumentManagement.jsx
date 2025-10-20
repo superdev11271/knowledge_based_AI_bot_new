@@ -19,6 +19,10 @@ function DocumentManagement() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [currentFileIndex, setCurrentFileIndex] = useState(0)
+  const [deleteComplete, setDeleteComplete] = useState(false)
+  const [deleteMessage, setDeleteMessage] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [pendingDeleteMessage, setPendingDeleteMessage] = useState('')
 
   // Helpers
   const formatBytes = (bytes) => {
@@ -172,23 +176,42 @@ function DocumentManagement() {
   }
 
   const confirmDelete = async () => {
+    // Close dialog immediately for snappy UX
+    const target = deleteTarget
+    const isBulk = target === 'selected'
+    setShowDeleteConfirm(false)
+    setDeleteTarget(null)
+
+    // Determine ids to delete
+    const idsToDelete = isBulk ? [...selectedDocuments] : (target ? [target] : [])
+    const count = idsToDelete.length
+
+    // Optimistic UI update
+    const prevDocs = documents
+    setDocuments(prev => prev.filter(doc => !idsToDelete.includes(doc.id)))
+    if (isBulk) setSelectedDocuments([])
+    setIsDeleting(true)
+    setPendingDeleteMessage(`Deleting ${count} document${count !== 1 ? 's' : ''}...`)
+
     try {
-      if (deleteTarget === 'selected') {
-        // Delete multiple documents
-        await api.deleteMultipleDocuments(selectedDocuments)
-        setDocuments(prev => prev.filter(doc => !selectedDocuments.includes(doc.id)))
-        setSelectedDocuments([])
-      } else if (deleteTarget) {
-        // Delete single document
-        await api.deleteDocument(deleteTarget)
-        setDocuments(prev => prev.filter(doc => doc.id !== deleteTarget))
+      if (isBulk) {
+        await api.deleteMultipleDocuments(idsToDelete)
+      } else if (target) {
+        await api.deleteDocument(target)
       }
+
+      // Success notification
+      setIsDeleting(false)
+      setDeleteMessage(`${count} document${count !== 1 ? 's' : ''} deleted successfully`)
+      setDeleteComplete(true)
+      setTimeout(() => setDeleteComplete(false), 3000)
     } catch (err) {
+      // Rollback optimistic update on error
+      setIsDeleting(false)
+      setDocuments(prevDocs)
+      if (isBulk) setSelectedDocuments(idsToDelete)
       setError(err.message)
       console.error('Failed to delete documents:', err)
-    } finally {
-      setShowDeleteConfirm(false)
-      setDeleteTarget(null)
     }
   }
 
@@ -416,6 +439,30 @@ function DocumentManagement() {
                   </svg>
                 </div>
                 <span className="text-sm font-medium text-green-800">Files uploaded successfully!</span>
+              </div>
+            </div>
+          )}
+
+          {/* Pending Delete Notification */}
+          {isDeleting && (
+            <div className="px-6 py-3 bg-blue-50 border-b border-blue-200">
+              <div className="flex items-center space-x-2">
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm font-medium text-blue-800">{pendingDeleteMessage || 'Deleting...'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Success Notification */}
+          {deleteComplete && (
+            <div className="px-6 py-3 bg-green-50 border-b border-green-200">
+              <div className="flex items-center space-x-2">
+                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span className="text-sm font-medium text-green-800">{deleteMessage || 'Deleted successfully'}</span>
               </div>
             </div>
           )}
