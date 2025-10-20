@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .chat-container {
+    @apply flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100;
+  }
+  
+  .message-bubble {
+    @apply max-w-xs lg:max-w-md px-4 py-2 rounded-2xl shadow-sm;
+  }
+  
+  .user-message {
+    @apply bg-primary-500 text-white ml-auto shadow-md;
+  }
+  
+  .bot-message {
+    @apply bg-white text-gray-800 border border-gray-200 shadow-sm;
+  }
+  
+  .typing-indicator {
+    @apply flex space-x-1;
+  }
+  
+  .typing-dot {
+    @apply w-2 h-2 bg-gray-400 rounded-full animate-pulse;
+  }
+  
+  .card-container {
+    @apply bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200;
+  }
+  
+  .card-header {
+    @apply bg-gradient-to-r from-primary-500 to-primary-600 px-6 py-4 text-white;
+  }
+  
+  .chat-messages {
+    @apply flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50;
+  }
+  
+  .chat-input {
+    @apply bg-white border-t border-gray-200 px-6 py-4;
+  }
+  
+  .markdown-content {
+    @apply text-sm;
+  }
+  
+  .markdown-content h1 {
+    @apply text-lg font-bold mb-2;
+  }
+  
+  .markdown-content h2 {
+    @apply text-base font-semibold mb-2;
+  }
+  
+  .markdown-content h3 {
+    @apply text-sm font-semibold mb-1;
+  }
+  
+  .markdown-content p {
+    @apply mb-2;
+  }
+  
+  .markdown-content ul, .markdown-content ol {
+    @apply mb-2 ml-4;
+  }
+  
+  .markdown-content li {
+    @apply mb-1;
+  }
+  
+  .markdown-content blockquote {
+    @apply border-l-4 border-primary-200 pl-4 italic text-gray-600 mb-2;
+  }
+  
+  .markdown-content code {
+    @apply bg-gray-100 px-1 py-0.5 rounded text-xs;
+  }
+  
+  .markdown-content pre {
+    @apply bg-gray-100 p-2 rounded text-xs overflow-x-auto mb-2;
+  }
+  
+  .markdown-content strong {
+    @apply font-semibold;
+  }
+}
