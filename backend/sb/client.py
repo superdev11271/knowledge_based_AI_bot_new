@@ -1,6 +1,4 @@
 from supabase import create_client, Client
-import sys
-sys.path.append(r'E:\CurrentProject\Project\tmp\Knowledge Based AI Bot\backend')
 from config import Config
 
 def get_supabase_client() -> Client:

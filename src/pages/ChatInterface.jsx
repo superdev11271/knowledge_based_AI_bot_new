@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { sendChatMessage } from '../services/api'
 
 function ChatInterface() {
   const [messages, setMessages] = useState([
@@ -43,32 +44,36 @@ function ChatInterface() {
       textarea.style.height = 'auto'
     }
 
-    // Simulate bot response (replace with your RAG pipeline)
-    setTimeout(() => {
+    // Send message to backend RAG pipeline
+    try {
+      const chatHistory = messages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      }))
+      
+      const response = await sendChatMessage(inputValue, chatHistory)
+      
       const botResponse = {
         id: Date.now() + 1,
-        text: `I understand your question. This is where your **RAG pipeline** would process the query and return a response based on your knowledge base.
-
-## Key Features:
-- **Retrieval**: Finds relevant information from your knowledge base
-- **Augmentation**: Enhances the query with context
-- **Generation**: Creates a comprehensive response
-
-### Example Response:
-Here's how the system works:
-
-1. **Query Processing**: Your question is analyzed
-2. **Document Retrieval**: Relevant documents are found
-3. **Context Integration**: Information is combined
-4. **Response Generation**: A detailed answer is created
-
-> This is a simulated response. Replace this with your actual RAG pipeline integration.`,
+        text: response.response,
+        sender: 'bot',
+        timestamp: new Date(),
+        sources: response.sources || []
+      }
+      
+      setMessages(prev => [...prev, botResponse])
+    } catch (error) {
+      console.error('Chat error:', error)
+      const errorResponse = {
+        id: Date.now() + 1,
+        text: `Sorry, I encountered an error: ${error.message}. Please try again.`,
         sender: 'bot',
         timestamp: new Date()
       }
-      setMessages(prev => [...prev, botResponse])
+      setMessages(prev => [...prev, errorResponse])
+    } finally {
       setIsTyping(false)
-    }, 1500)
+    }
   }
 
   const handleKeyPress = (e) => {
@@ -141,6 +146,20 @@ Here's how the system works:
                     {message.sender === 'bot' ? (
                       <div className="markdown-content">
                         <ReactMarkdown>{message.text}</ReactMarkdown>
+                        {message.sources && message.sources.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <p className="text-xs text-gray-600 mb-2">Sources:</p>
+                            <div className="space-y-1">
+                              {message.sources.map((source, index) => (
+                                <div key={index} className="text-xs text-gray-500 flex items-center space-x-2">
+                                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                  <span>{source.document_name}</span>
+                                  <span className="text-gray-400">({Math.round(source.similarity * 100)}% match)</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{message.text}</p>

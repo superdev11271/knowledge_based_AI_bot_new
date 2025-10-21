@@ -37,6 +37,58 @@ ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public access to documents" ON documents
     FOR ALL USING (true);
 
+-- Enable pgvector extension for vector similarity search
+CREATE EXTENSION IF NOT EXISTS vector;
+
+
+-- Table to store document chunks and embeddings
+CREATE TABLE IF NOT EXISTS document_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(3072) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON document_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_chunk_index ON document_chunks(chunk_index);
+
+
+-- Create vector similarity search function
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding vector(3072),
+  match_threshold float DEFAULT 0.5,
+  match_count int DEFAULT 5
+)
+RETURNS TABLE (
+  id uuid,
+  document_id uuid,
+  chunk_index int,
+  content text,
+  similarity float,
+  document_name text,
+  document_path text,
+  document_type text
+)
+LANGUAGE sql
+AS $$
+  SELECT 
+    dc.id,
+    dc.document_id,
+    dc.chunk_index,
+    dc.content,
+    1 - (dc.embedding <=> query_embedding) as similarity,
+    d.name as document_name,
+    d.file_path as document_path,
+    d.file_type as document_type
+  FROM document_chunks dc
+  JOIN documents d ON dc.document_id = d.id
+  WHERE 1 - (dc.embedding <=> query_embedding) > match_threshold
+  ORDER BY dc.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+
 -- Insert some sample data (optional)
 -- INSERT INTO documents (name, original_name, file_path, file_size, file_size_bytes, file_type, upload_date) 
 -- VALUES 

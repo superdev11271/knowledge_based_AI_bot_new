@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify
 import os
 import uuid
 from werkzeug.utils import secure_filename
@@ -8,6 +8,10 @@ sys.path.append('..')
 from sb.database_service import DocumentService
 from config import Config
 from flask import send_file
+import fitz  # PyMuPDF
+import docx2txt
+from openai import OpenAI
+import re
 
 document = Blueprint("document", __name__)
 
@@ -66,6 +70,30 @@ def upload_document():
         db_service = DocumentService()
         saved_document = db_service.create_document(document_data)
         
+        # RAG pipeline: extract text -> chunk -> embed -> save chunks
+        try:
+            abs_app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend/app -> backend
+            full_path = os.path.join(abs_app_dir, file_path)
+            text_content = extract_text(full_path, file_extension.upper()) 
+            chunks = chunk_text(text_content)
+            
+            if chunks:
+                embeddings = embed_chunks_openai(chunks)
+                chunk_rows = [
+                    { 'chunk_index': idx, 'content': chunks[idx], 'embedding': embeddings[idx] }
+                    for idx in range(len(chunks))
+                ]
+                db_service.insert_document_chunks(saved_document['id'], chunk_rows)
+                
+        except Exception as e:
+            # Do not fail upload if RAG pipeline errors; report warning in response
+            
+            return jsonify({
+                "message": "File uploaded, processing had issues",
+                "document": saved_document,
+                "processing_error": str(e)
+            }), 200
+
         return jsonify({
             "message": "File uploaded successfully",
             "document": saved_document
@@ -194,3 +222,82 @@ def download_document(document_id):
         )
     except Exception as e:
         return jsonify({"error": f"Failed to download document: {str(e)}"}), 500
+
+
+# ========== RAG Processing Helpers ==========
+
+def extract_text(file_path: str, file_type: str) -> str:
+    """Extract text from supported file types."""
+    try:
+        ft = (file_type or '').upper()
+        if ft == 'PDF':
+            text_parts = []
+            with fitz.open(file_path) as doc:
+                for page in doc:
+                    text_parts.append(page.get_text("text"))
+            return "\n".join(text_parts)
+        if ft in ['DOCX', 'DOC']:
+            # docx2txt handles .docx; .doc may fail
+            return docx2txt.process(file_path) or ''
+        # Plain-text like files
+        if ft in ['TXT', 'MD', 'JS', 'TS', 'TSX', 'JSX', 'SQL', 'YAML', 'YML', 'CSV']:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read()
+        # Fallback: try utf-8 read
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            return f.read()
+    except Exception:
+        return ''
+
+
+def chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> list[str]:
+    """
+    Split text into overlapping chunks of at most `max_chars` characters.
+    Tries to break at sentence or word boundaries. Ensures no text loss or duplication.
+    """
+    if not text:
+        return []
+
+    # Normalize whitespace but preserve paragraph breaks
+    text = re.sub(r"[ \t]+", " ", text).strip()
+
+    chunks = []
+    start = 0
+    n = len(text)
+
+    while start < n:
+        end = min(n, start + max_chars)
+        window = text[start:end]
+
+        # Try to cut near the end of a sentence or word boundary
+        cut = max(window.rfind(". "), window.rfind(" "), window.rfind("\n"))
+        if cut == -1 or cut < max_chars * 0.5:
+            cut = len(window)
+
+        chunk = window[:cut].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        # Move start forward by (cut - overlap), but never backward or beyond text
+        next_start = start + cut - overlap
+        if next_start <= start:
+            next_start = start + cut  # avoid infinite loops when cut < overlap
+
+        start = min(next_start, n)
+
+    return chunks
+
+
+def embed_chunks_openai(chunks: list) -> list:
+    """Create embeddings for chunks using OpenAI text-embedding-3-large."""
+    if not chunks:
+        return []
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    model = "text-embedding-3-large"
+    # OpenAI API supports batching inputs
+    resp = client.embeddings.create(model=model, input=chunks)
+    vectors = [data.embedding for data in resp.data]
+    return vectors

@@ -99,3 +99,70 @@ class DocumentService:
         except Exception as e:
             print(f"Error updating document status: {str(e)}")
             raise e
+
+    def insert_document_chunks(self, document_id, chunks_with_embeddings):
+        """Bulk insert document chunks with embeddings.
+        chunks_with_embeddings: List[dict] with keys: chunk_index, content, embedding
+        """
+        try:
+            if not chunks_with_embeddings:
+                return []
+            rows = []
+            for item in chunks_with_embeddings:
+                rows.append({
+                    'document_id': document_id,
+                    'chunk_index': int(item['chunk_index']),
+                    'content': item['content'],
+                    'embedding': f"[{','.join(map(str, item['embedding']))}]"  # Convert to PostgreSQL vector format
+                })
+            result = self.supabase.table('document_chunks').insert(rows).execute()
+            return result.data or []
+        except Exception as e:
+            print(f"Error inserting document chunks: {str(e)}")
+            raise e
+
+    def search_similar_chunks(self, query_text, top_k=5):
+        """Search for similar chunks using Supabase SQL function."""
+        try:
+            from openai import OpenAI
+            import os
+            # Generate embedding for query
+            OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            query_embedding = client.embeddings.create(
+                model="text-embedding-3-large",
+                input=query_text
+            ).data[0].embedding
+            # Call Supabase SQL function directly
+            result = self.supabase.rpc(
+                'match_documents',
+                {
+                    'query_embedding': query_embedding,
+                    'match_threshold': 0.5,
+                    'match_count': top_k
+                }
+            ).execute()
+            # Format results with source links
+            if result.data:
+                formatted_results = []
+                for chunk in result.data:
+                    formatted_results.append({
+                        'id': chunk.get('id'),
+                        'document_id': chunk.get('document_id'),
+                        'chunk_index': chunk.get('chunk_index'),
+                        'content': chunk.get('content'),
+                        'similarity': chunk.get('similarity'),
+                        'document_name': chunk.get('document_name', 'Unknown'),
+                        'document_path': chunk.get('document_path', ''),
+                        'document_type': chunk.get('document_type', ''),
+                        'source_link': f"/documents/{chunk.get('document_id')}"
+                    })
+                return formatted_results
+            
+            return []
+            
+        except Exception as e:
+            print(f"Error searching similar chunks: {str(e)}")
+            return []
+    

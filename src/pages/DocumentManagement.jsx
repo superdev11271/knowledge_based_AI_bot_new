@@ -246,27 +246,25 @@ function DocumentManagement() {
           name: fileInfo.name,
           size: fileInfo.size,
           progress: 0,
+          status: 'uploading',
           isFolderUpload: false
         }])
         
         try {
-          // Simulate progress for individual file
-          const progressInterval = setInterval(() => {
+          // Upload single file with real progress tracking
+          const response = await api.uploadFile(file, (progressEvent) => {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
             setUploadingFiles(prev => prev.map(f => 
               f.id === fileInfo.id 
-                ? { ...f, progress: Math.min(f.progress + Math.random() * 20, 90) }
+                ? { ...f, progress: percentCompleted, status: percentCompleted === 100 ? 'processing' : 'uploading' }
                 : f
             ))
-          }, 100)
+          })
           
-          // Upload single file
-          const response = await api.uploadFile(file)
-          
-          // Complete progress
-          clearInterval(progressInterval)
+          // Ensure progress is 100% and status is completed after response
           setUploadingFiles(prev => prev.map(f => 
             f.id === fileInfo.id 
-              ? { ...f, progress: 100 }
+              ? { ...f, progress: 100, status: 'completed' }
               : f
           ))
           
@@ -493,8 +491,14 @@ function DocumentManagement() {
           {isUploading && uploadingFiles.length > 0 && (
             <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-blue-900">
-                  Uploading files one by one...
+                <h3 className={`text-sm font-medium ${
+                  uploadingFiles[0]?.status === 'processing' ? 'text-orange-900' : 
+                  uploadingFiles[0]?.status === 'completed' ? 'text-green-900' :
+                  'text-blue-900'
+                }`}>
+                  {uploadingFiles[0]?.status === 'processing' ? 'Processing file...' : 
+                   uploadingFiles[0]?.status === 'completed' ? 'Upload completed!' :
+                   'Uploading files one by one...'}
                 </h3>
                 <div className="text-xs text-blue-600">
                   {currentFileIndex} of {pendingFiles.length} files
@@ -513,12 +517,18 @@ function DocumentManagement() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-gray-500">{Math.round(uploadingFiles[0].progress)}%</span>
-                    {uploadingFiles[0].progress === 100 && (
+                    {uploadingFiles[0].status === 'processing' && (
+                      <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                    {uploadingFiles[0].status === 'completed' && (
                       <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
                         <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
                       </div>
+                    )}
+                    {uploadingFiles[0].status === 'uploading' && uploadingFiles[0].progress < 100 && (
+                      <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                     )}
                   </div>
                 </div>
