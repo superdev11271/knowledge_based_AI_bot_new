@@ -223,29 +223,54 @@ def delete_all_documents():
     try:
         db_service = DocumentService()
         
-        # First, delete all files from filesystem
-        all_documents = db_service.get_documents()
+        # Delete files and documents in batches to avoid timeouts
+        total_deleted = 0
+        batch_size = 100  # Batch size of 100
         
-        print(f"Deleting {len(all_documents)} files from filesystem...")
-        for doc in all_documents:
+        while True:
             try:
-                file_path = doc.get('file_path')
-                current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
-                app_dir = os.path.dirname(current_dir)
-                file_path = os.path.join(app_dir, file_path)
-                if file_path and os.path.exists(file_path):
-                    os.remove(file_path)
-            except Exception as e:
-                print(f"Error deleting file {file_path}: {e}")
-        
-        print("Files deleted from filesystem. Now deleting from database via RPC...")
-        
-        # Use Supabase RPC for database deletion
-        result = db_service.delete_all_documents_rpc()
+                # Get a small batch of documents
+                batch_docs = db_service.get_documents_paginated(1, batch_size)['documents']
+                
+                if not batch_docs:
+                    break  # No more documents to delete
+                
+                # Delete files from filesystem for this batch
+                for doc in batch_docs:
+                    try:
+                        file_path = doc.get('file_path')
+                        current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
+                        app_dir = os.path.dirname(current_dir)
+                        file_path = os.path.join(app_dir, file_path)
+                        if file_path and os.path.exists(file_path):
+                            os.remove(file_path)
+                    except Exception:
+                        pass
+                
+                # Delete this batch from database
+                batch_ids = [doc['id'] for doc in batch_docs]
+                deleted_rows = db_service.delete_multiple_documents(batch_ids)
+                batch_deleted = len(deleted_rows)
+                total_deleted += batch_deleted
+                
+                print(f"Deleted batch of {batch_deleted} documents. Total deleted: {total_deleted}")
+                
+                # If we deleted fewer documents than requested, we're done
+                if batch_deleted < batch_size:
+                    break
+                    
+                # Small delay to prevent overwhelming the database
+                import time
+                time.sleep(0.1)  # 100ms delay between batches
+                
+            except Exception as batch_error:
+                print(f"Error in batch deletion: {batch_error}")
+                # Continue with next batch even if one fails
+                continue
         
         return jsonify({
-            "message": f"Deleted all {result['deleted_count']} documents successfully",
-            "deleted_count": result['deleted_count']
+            "message": f"Deleted all {total_deleted} documents successfully",
+            "deleted_count": total_deleted
         }), 200
         
     except Exception as e:

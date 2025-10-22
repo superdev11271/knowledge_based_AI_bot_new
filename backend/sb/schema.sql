@@ -89,30 +89,6 @@ AS $$
   LIMIT match_count;
 $$;
 
--- Create function to delete all documents
-CREATE OR REPLACE FUNCTION delete_all_documents()
-RETURNS TABLE (
-  deleted_count int,
-  message text
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-  doc_count int;
-BEGIN
-  -- Get count of documents before deletion
-  SELECT COUNT(*) INTO doc_count FROM documents;
-  
-  -- Delete all documents with WHERE clause (cascade will handle document_chunks)
-  DELETE FROM documents WHERE id IS NOT NULL;
-  
-  -- Return result
-  RETURN QUERY SELECT 
-    doc_count as deleted_count,
-    'All documents deleted successfully' as message;
-END;
-$$;
-
 -- Insert some sample data (optional)
 -- INSERT INTO documents (name, original_name, file_path, file_size, file_size_bytes, file_type, upload_date) 
 -- VALUES 

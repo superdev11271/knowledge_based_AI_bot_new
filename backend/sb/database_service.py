@@ -117,7 +117,7 @@ class DocumentService:
         """Delete all documents from the database in small batches"""
         try:
             total_deleted = 0
-            batch_size = 10  # Much smaller batches to avoid timeouts
+            batch_size = 100  # Batch size of 100
             
             while True:
                 try:
@@ -154,29 +154,6 @@ class DocumentService:
             return total_deleted
         except Exception as e:
             print(f"Error deleting all documents: {str(e)}")
-            raise e
-
-    def delete_all_documents_rpc(self):
-        """Delete all documents using Supabase RPC function"""
-        try:
-            # Call the delete_all_documents SQL function
-            result = self.supabase.rpc('delete_all_documents').execute()
-            
-            if result.data and len(result.data) > 0:
-                # result.data is a list, get the first item
-                data = result.data[0]
-                return {
-                    'deleted_count': data.get('deleted_count', 0),
-                    'message': data.get('message', 'Documents deleted successfully')
-                }
-            else:
-                return {
-                    'deleted_count': 0,
-                    'message': 'No documents found to delete'
-                }
-                
-        except Exception as e:
-            print(f"Error in RPC delete all documents: {str(e)}")
             raise e
     
     def update_document_status(self, document_id, status):
