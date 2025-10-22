@@ -114,12 +114,23 @@ def upload_document():
 @document.route("/list", methods=["GET"])
 def list_documents():
     try:
-        # Get documents from Supabase
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 5))
+        
+        # Validate parameters
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:  # Limit max items per page
+            per_page = 5
+        
+        # Get documents from Supabase with pagination
         db_service = DocumentService()
-        documents = db_service.get_documents()
+        result = db_service.get_documents_paginated(page, per_page)
+        
         # Format documents for frontend
         formatted_documents = []
-        for doc in documents:
+        for doc in result['documents']:
             formatted_doc = {
                 "id": doc.get('id'),
                 "name": doc.get('name'),
@@ -134,7 +145,10 @@ def list_documents():
         
         return jsonify({
             "documents": formatted_documents,
-            "total": len(formatted_documents)
+            "total": result['total'],
+            "page": page,
+            "per_page": per_page,
+            "total_pages": result['total_pages']
         }), 200
         
     except Exception as e:
@@ -203,6 +217,39 @@ def delete_multiple_documents():
         
     except Exception as e:
         return jsonify({"error": f"Failed to delete documents: {str(e)}"}), 500
+
+@document.route("/delete-all", methods=["DELETE"])
+def delete_all_documents():
+    try:
+        db_service = DocumentService()
+        
+        # First, delete all files from filesystem
+        all_documents = db_service.get_documents()
+        
+        print(f"Deleting {len(all_documents)} files from filesystem...")
+        for doc in all_documents:
+            try:
+                file_path = doc.get('file_path')
+                current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
+                app_dir = os.path.dirname(current_dir)
+                file_path = os.path.join(app_dir, file_path)
+                if file_path and os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as e:
+                print(f"Error deleting file {file_path}: {e}")
+        
+        print("Files deleted from filesystem. Now deleting from database via RPC...")
+        
+        # Use Supabase RPC for database deletion
+        result = db_service.delete_all_documents_rpc()
+        
+        return jsonify({
+            "message": f"Deleted all {result['deleted_count']} documents successfully",
+            "deleted_count": result['deleted_count']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete all documents: {str(e)}"}), 500
 
 @document.route("/download/<document_id>", methods=["GET"])
 def download_document(document_id):

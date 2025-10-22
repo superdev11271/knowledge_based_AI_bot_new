@@ -54,9 +54,14 @@ export const uploadFile = async (file, onUploadProgress) => {
   return response.data
 }
 
-// Get all documents
-export const getDocuments = async () => {
-  const response = await apiClient.get('/api/document/list')
+// Get documents with pagination
+export const getDocuments = async (page = 1, perPage = 5) => {
+  const response = await apiClient.get('/api/document/list', {
+    params: {
+      page,
+      per_page: perPage
+    }
+  })
   return response.data
 }
 
@@ -71,6 +76,12 @@ export const deleteMultipleDocuments = async (documentIds) => {
   const response = await apiClient.delete('/api/document/delete-multiple', {
     data: { document_ids: documentIds }
   })
+  return response.data
+}
+
+// Delete all documents
+export const deleteAllDocuments = async () => {
+  const response = await apiClient.delete('/api/document/delete-all')
   return response.data
 }
 

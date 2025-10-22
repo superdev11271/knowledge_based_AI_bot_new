@@ -8,6 +8,8 @@ function DocumentManagement() {
   const [selectedDocuments, setSelectedDocuments] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(5)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalDocuments, setTotalDocuments] = useState(0)
   const [uploadingFiles, setUploadingFiles] = useState([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadComplete, setUploadComplete] = useState(false)
@@ -36,12 +38,14 @@ function DocumentManagement() {
   }
 
   // Load documents from backend
-  const loadDocuments = async () => {
+  const loadDocuments = async (page = currentPage, perPage = itemsPerPage) => {
     try {
       setLoading(true)
       setError(null)
-      const response = await api.getDocuments()
+      const response = await api.getDocuments(page, perPage)
       setDocuments(response.documents || [])
+      setTotalPages(response.total_pages || 1)
+      setTotalDocuments(response.total || 0)
     } catch (err) {
       setError(err.message)
       console.error('Failed to load documents:', err)
@@ -50,10 +54,10 @@ function DocumentManagement() {
     }
   }
 
-  // Load documents on component mount
+  // Load documents on component mount and when pagination changes
   useEffect(() => {
-    loadDocuments()
-  }, [])
+    loadDocuments(currentPage, itemsPerPage)
+  }, [currentPage, itemsPerPage])
 
   const handleFileUpload = (event) => {
     const files = Array.from(event.target.files)
@@ -183,18 +187,34 @@ function DocumentManagement() {
     setDeleteTarget(null)
 
     // Determine ids to delete
-    const idsToDelete = isBulk ? [...selectedDocuments] : (target ? [target] : [])
+    let idsToDelete = []
+    if (isBulk) {
+      idsToDelete = [...selectedDocuments]
+    } else if (target === 'all') {
+      // For delete all, we need to get all document IDs from the database
+      // We'll handle this in the backend by not sending specific IDs
+      idsToDelete = [] // Empty array means delete all in backend
+    } else if (target) {
+      idsToDelete = [target]
+    }
+    
     const count = idsToDelete.length
 
     // Optimistic UI update
     const prevDocs = documents
-    setDocuments(prev => prev.filter(doc => !idsToDelete.includes(doc.id)))
-    if (isBulk) setSelectedDocuments([])
+    if (target === 'all') {
+      setDocuments([]) // Clear all documents for delete all
+    } else {
+      setDocuments(prev => prev.filter(doc => !idsToDelete.includes(doc.id)))
+    }
+    if (isBulk || target === 'all') setSelectedDocuments([])
     setIsDeleting(true)
-    setPendingDeleteMessage(`Deleting ${count} document${count !== 1 ? 's' : ''}...`)
+    setPendingDeleteMessage(target === 'all' ? 'Deleting all documents...' : `Deleting ${count} document${count !== 1 ? 's' : ''}...`)
 
     try {
-      if (isBulk) {
+      if (target === 'all') {
+        await api.deleteAllDocuments()
+      } else if (isBulk) {
         await api.deleteMultipleDocuments(idsToDelete)
       } else if (target) {
         await api.deleteDocument(target)
@@ -202,14 +222,17 @@ function DocumentManagement() {
 
       // Success notification
       setIsDeleting(false)
-      setDeleteMessage(`${count} document${count !== 1 ? 's' : ''} deleted successfully`)
+      setDeleteMessage(target === 'all' ? 'All documents deleted successfully' : `${count} document${count !== 1 ? 's' : ''} deleted successfully`)
       setDeleteComplete(true)
       setTimeout(() => setDeleteComplete(false), 3000)
+      
+      // Reload the document list to show updated data
+      loadDocuments(currentPage, itemsPerPage)
     } catch (err) {
       // Rollback optimistic update on error
       setIsDeleting(false)
       setDocuments(prevDocs)
-      if (isBulk) setSelectedDocuments(idsToDelete)
+      if (isBulk || target === 'all') setSelectedDocuments(idsToDelete)
       setError(err.message)
       console.error('Failed to delete documents:', err)
     }
@@ -271,7 +294,8 @@ function DocumentManagement() {
           // Add to uploaded documents
           if (response.document) {
             uploadedDocuments.push(response.document)
-            setDocuments(prev => [...prev, response.document])
+            // Reload current page to show new documents
+            loadDocuments(currentPage, itemsPerPage)
           }
           
           // Wait a moment to show completion
@@ -332,11 +356,10 @@ function DocumentManagement() {
     doc.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  // Pagination calculations
-  const totalPages = itemsPerPage === -1 ? 1 : Math.ceil(filteredDocuments.length / itemsPerPage)
-  const startIndex = itemsPerPage === -1 ? 0 : (currentPage - 1) * itemsPerPage
-  const endIndex = itemsPerPage === -1 ? filteredDocuments.length : startIndex + itemsPerPage
-  const currentDocuments = filteredDocuments.slice(startIndex, endIndex)
+  // Use server-side pagination data
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = Math.min(startIndex + itemsPerPage, totalDocuments)
+  const currentDocuments = documents // Documents are already paginated from server
 
   const handlePageChange = (page) => {
     setCurrentPage(page)
@@ -347,6 +370,7 @@ function DocumentManagement() {
     setItemsPerPage(newItemsPerPage)
     setCurrentPage(1) // Reset to first page
     setSelectedDocuments([]) // Clear selection
+    // loadDocuments will be called by useEffect when itemsPerPage changes
   }
 
   return (
@@ -414,13 +438,24 @@ function DocumentManagement() {
                     disabled={isUploading}
                   />
                 </label>
-                {selectedDocuments.length > 0 && (
+                {selectedDocuments.length > 0 ? (
                   <button
                     onClick={handleDeleteSelected}
                     className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
                   >
                     <Trash2 className="w-4 h-4 inline mr-2" />
                     Delete ({selectedDocuments.length})
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setDeleteTarget('all')
+                      setShowDeleteConfirm(true)
+                    }}
+                    className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4 inline mr-2" />
+                    Delete All
                   </button>
                 )}
               </div>
@@ -564,10 +599,7 @@ function DocumentManagement() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                   <div className="flex items-center space-x-4">
                     <span className="text-sm text-gray-600">
-                      {itemsPerPage === -1 
-                        ? `Showing all ${filteredDocuments.length} documents`
-                        : `Showing ${startIndex + 1}-${Math.min(endIndex, filteredDocuments.length)} of ${filteredDocuments.length} documents`
-                      }
+                      Showing {startIndex + 1}-{endIndex} of {totalDocuments} documents
                     </span>
                     <select
                       value={itemsPerPage}
@@ -578,7 +610,8 @@ function DocumentManagement() {
                       <option value={10}>10 per page</option>
                       <option value={20}>20 per page</option>
                       <option value={50}>50 per page</option>
-                      <option value={-1}>Show All</option>
+                      <option value={100}>100 per page</option>
+                      <option value={200}>200 per page</option>
                     </select>
                   </div>
                 </div>
@@ -685,7 +718,7 @@ function DocumentManagement() {
                 ))}
 
                 {/* Pagination Controls */}
-                {totalPages > 1 && itemsPerPage !== -1 && (
+                {totalPages > 1 && (
                   <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200">
                     <div className="flex items-center space-x-2">
                       <button
@@ -696,34 +729,53 @@ function DocumentManagement() {
                         Previous
                       </button>
                       
-                      <div className="flex space-x-1">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                          let pageNum;
-                          if (totalPages <= 5) {
-                            pageNum = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i;
-                          } else {
-                            pageNum = currentPage - 2 + i;
-                          }
+                        <div className="flex items-center space-x-2">
+                          {/* Page Number Buttons */}
+                          <div className="flex space-x-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              let pageNum;
+                              if (totalPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (currentPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (currentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                pageNum = currentPage - 2 + i;
+                              }
+                              
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => handlePageChange(pageNum)}
+                                  className={`px-3 py-1 text-sm border rounded ${
+                                    currentPage === pageNum
+                                      ? 'bg-primary-500 text-white border-primary-500'
+                                      : 'border-gray-300 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
                           
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => handlePageChange(pageNum)}
-                              className={`px-3 py-1 text-sm border rounded ${
-                                currentPage === pageNum
-                                  ? 'bg-primary-500 text-white border-primary-500'
-                                  : 'border-gray-300 hover:bg-gray-50'
-                              }`}
+                          {/* Page Selector Dropdown */}
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm text-gray-600">Go to:</span>
+                            <select
+                              value={currentPage}
+                              onChange={(e) => handlePageChange(Number(e.target.value))}
+                              className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500"
                             >
-                              {pageNum}
-                            </button>
-                          );
-                        })}
-                      </div>
+                              {Array.from({ length: totalPages }, (_, i) => (
+                                <option key={i + 1} value={i + 1}>
+                                  Page {i + 1}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                       
                       <button
                         onClick={() => handlePageChange(currentPage + 1)}
@@ -852,6 +904,8 @@ function DocumentManagement() {
                  <p className="text-sm text-gray-500">
                    {deleteTarget === 'selected'
                      ? `Are you sure you want to delete ${selectedDocuments.length} selected documents? This action cannot be undone.`
+                     : deleteTarget === 'all'
+                     ? `Are you sure you want to delete ALL documents in the database? This action cannot be undone and will remove all uploaded files.`
                      : 'Are you sure you want to delete this document? This action cannot be undone.'
                    }
                  </p>

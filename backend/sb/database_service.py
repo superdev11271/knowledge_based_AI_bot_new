@@ -44,6 +44,34 @@ class DocumentService:
         except Exception as e:
             print(f"Error fetching documents: {str(e)}")
             raise e
+
+    def get_documents_paginated(self, page=1, per_page=5):
+        """Get documents with pagination"""
+        try:
+            # Calculate offset
+            offset = (page - 1) * per_page
+            
+            # Get total count
+            count_result = self.supabase.table(self.table).select('id', count='exact').execute()
+            total = count_result.count or 0
+            
+            # Get paginated documents
+            result = self.supabase.table(self.table).select('*').order('created_at', desc=True).range(offset, offset + per_page - 1).execute()
+            documents = result.data or []
+            
+            # Calculate total pages
+            total_pages = (total + per_page - 1) // per_page
+            
+            return {
+                'documents': documents,
+                'total': total,
+                'total_pages': total_pages,
+                'page': page,
+                'per_page': per_page
+            }
+        except Exception as e:
+            print(f"Error getting paginated documents: {str(e)}")
+            raise e
     
     def get_document_by_id(self, document_id):
         """Get a specific document by ID"""
@@ -83,6 +111,72 @@ class DocumentService:
             return result.data or []
         except Exception as e:
             print(f"Error deleting documents: {str(e)}")
+            raise e
+
+    def delete_all_documents(self):
+        """Delete all documents from the database in small batches"""
+        try:
+            total_deleted = 0
+            batch_size = 10  # Much smaller batches to avoid timeouts
+            
+            while True:
+                try:
+                    # Get a small batch of documents to delete
+                    batch_result = self.supabase.table(self.table).select('id').limit(batch_size).execute()
+                    batch_docs = batch_result.data or []
+                    
+                    if not batch_docs:
+                        break  # No more documents to delete
+                    
+                    # Extract IDs from the batch
+                    batch_ids = [doc['id'] for doc in batch_docs]
+                    
+                    # Delete this batch with timeout handling
+                    delete_result = self.supabase.table(self.table).delete().in_('id', batch_ids).execute()
+                    deleted_count = len(delete_result.data or [])
+                    total_deleted += deleted_count
+                    
+                    print(f"Deleted batch of {deleted_count} documents. Total deleted: {total_deleted}")
+                    
+                    # If we deleted fewer documents than requested, we're done
+                    if deleted_count < batch_size:
+                        break
+                        
+                    # Small delay to prevent overwhelming the database
+                    import time
+                    time.sleep(0.1)  # 100ms delay between batches
+                    
+                except Exception as batch_error:
+                    print(f"Error in batch deletion: {batch_error}")
+                    # Continue with next batch even if one fails
+                    continue
+            
+            return total_deleted
+        except Exception as e:
+            print(f"Error deleting all documents: {str(e)}")
+            raise e
+
+    def delete_all_documents_rpc(self):
+        """Delete all documents using Supabase RPC function"""
+        try:
+            # Call the delete_all_documents SQL function
+            result = self.supabase.rpc('delete_all_documents').execute()
+            
+            if result.data and len(result.data) > 0:
+                # result.data is a list, get the first item
+                data = result.data[0]
+                return {
+                    'deleted_count': data.get('deleted_count', 0),
+                    'message': data.get('message', 'Documents deleted successfully')
+                }
+            else:
+                return {
+                    'deleted_count': 0,
+                    'message': 'No documents found to delete'
+                }
+                
+        except Exception as e:
+            print(f"Error in RPC delete all documents: {str(e)}")
             raise e
     
     def update_document_status(self, document_id, status):
