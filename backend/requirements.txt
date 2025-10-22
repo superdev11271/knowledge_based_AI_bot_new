@@ -6,9 +6,7 @@ pytesseract
 flask
 flask-cors
 python-dotenv
-python-telegram-bot
 supabase
 openai
-youtube-transcript-api
 edoc
 httpx[socks]

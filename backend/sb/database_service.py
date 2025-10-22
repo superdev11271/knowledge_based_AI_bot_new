@@ -109,10 +109,12 @@ class DocumentService:
                 return []
             rows = []
             for item in chunks_with_embeddings:
+                # Clean content to remove problematic Unicode characters
+                cleaned_content = self._clean_text_content(item['content'])
                 rows.append({
                     'document_id': document_id,
                     'chunk_index': int(item['chunk_index']),
-                    'content': item['content'],
+                    'content': cleaned_content,
                     'embedding': f"[{','.join(map(str, item['embedding']))}]"  # Convert to PostgreSQL vector format
                 })
             result = self.supabase.table('document_chunks').insert(rows).execute()
@@ -165,4 +167,22 @@ class DocumentService:
         except Exception as e:
             print(f"Error searching similar chunks: {str(e)}")
             return []
+    
+    def _clean_text_content(self, text):
+        """Clean text content to remove problematic Unicode characters."""
+        if not text:
+            return ""
+        
+        # Remove null characters and other problematic Unicode sequences
+        cleaned = text.replace('\x00', '')  # Remove null characters
+        cleaned = cleaned.replace('\u0000', '')  # Remove Unicode null characters
+        
+        # Remove other control characters except newlines and tabs
+        import re
+        cleaned = re.sub(r'[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]', '', cleaned)
+        
+        # Normalize whitespace
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        return cleaned
     

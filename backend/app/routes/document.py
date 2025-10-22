@@ -12,7 +12,10 @@ import fitz  # PyMuPDF
 import docx2txt
 from openai import OpenAI
 import re
-
+import io
+from PIL import Image
+import pytesseract
+import edoc
 document = Blueprint("document", __name__)
 
 # Configure upload settings from config
@@ -74,7 +77,7 @@ def upload_document():
         try:
             abs_app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend/app -> backend
             full_path = os.path.join(abs_app_dir, file_path)
-            text_content = extract_text(full_path, file_extension.upper()) 
+            text_content = extract_text(full_path, file_extension.upper())
             chunks = chunk_text(text_content)
             
             if chunks:
@@ -87,12 +90,17 @@ def upload_document():
                 
         except Exception as e:
             # Do not fail upload if RAG pipeline errors; report warning in response
-            
-            return jsonify({
-                "message": "File uploaded, processing had issues",
-                "document": saved_document,
-                "processing_error": str(e)
-            }), 200
+            try:
+                db_service.delete_document(saved_document['id'])
+                return jsonify({
+                    "message": "File uploaded, processing had issues",
+                    "processing_error": str(e)
+                }), 200
+            except Exception as e:
+                jsonify({
+                    "message": "File uploaded, processing had issues",
+                    "processing_error": str(e)
+                }), 200
 
         return jsonify({
             "message": "File uploaded successfully",
@@ -225,20 +233,56 @@ def download_document(document_id):
 
 
 # ========== RAG Processing Helpers ==========
+def ocr_pdf_from_bytes_pymupdf(pdf_bytes):
+    """
+    Run OCR on a PDF given as bytes using PyMuPDF to render pages as images.
+    No Poppler required.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    text = ""
+    for i, page in enumerate(doc, start=1):
+        # Render page to an image (RGB)
+        pix = page.get_pixmap(dpi=300)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        
+        # Run OCR
+        page_text = pytesseract.image_to_string(img, lang="eng")
+        text += f"\n--- OCR Page {i} ---\n{page_text}"
+    return text
 
+
+def extract_pdf_text_from_bytes(pdf_bytes, min_chars_threshold=20):
+    """
+    Extract text from PDF bytes. If not enough text, run OCR using PyMuPDF.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    extracted_text = ""
+
+    for page in doc:
+        page_text = page.get_text()
+        extracted_text += page_text
+    
+    if len(extracted_text) > min_chars_threshold:
+        print("✅ PDF is text-based. Extracting directly.")
+        return extracted_text
+    else:
+        print("⚠️ PDF is image-based. Running OCR fallback.")
+        return ocr_pdf_from_bytes_pymupdf(pdf_bytes)
+    
 def extract_text(file_path: str, file_type: str) -> str:
     """Extract text from supported file types."""
     try:
         ft = (file_type or '').upper()
         if ft == 'PDF':
-            text_parts = []
-            with fitz.open(file_path) as doc:
-                for page in doc:
-                    text_parts.append(page.get_text("text"))
-            return "\n".join(text_parts)
-        if ft in ['DOCX', 'DOC']:
+            with open(file_path, "rb") as f:
+                pdf_bytes = f.read()
+            text = extract_pdf_text_from_bytes(pdf_bytes)
+            return text
+        if ft =='DOCX':
             # docx2txt handles .docx; .doc may fail
             return docx2txt.process(file_path) or ''
+        if ft == 'DOC':
+            return edoc.extraxt_txt(file_path)
         # Plain-text like files
         if ft in ['TXT', 'MD', 'JS', 'TS', 'TSX', 'JSX', 'SQL', 'YAML', 'YML', 'CSV']:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
