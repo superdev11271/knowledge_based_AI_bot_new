@@ -141,7 +141,7 @@ class DocumentService:
                 'match_documents',
                 {
                     'query_embedding': query_embedding,
-                    'match_threshold': 0.5,
+                    'match_threshold': 0.4,
                     'match_count': top_k
                 }
             ).execute()

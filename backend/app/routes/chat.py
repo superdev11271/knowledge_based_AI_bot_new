@@ -63,10 +63,8 @@ Please provide a helpful and accurate response based on the available informatio
         # Get response from OpenAI
         client = get_openai_client()
         response = client.chat.completions.create(
-            model="gpt-4",
-            messages=messages,
-            max_tokens=1000,
-            temperature=0.7
+            model="gpt-5",
+            messages=messages
         )
         
         bot_response = response.choices[0].message.content

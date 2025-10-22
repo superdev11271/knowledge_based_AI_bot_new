@@ -294,7 +294,7 @@ def extract_text(file_path: str, file_type: str) -> str:
         return ''
 
 
-def chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> list[str]:
+def chunk_text(text: str, max_chars: int = 500, overlap: int = 50) -> list[str]:
     """
     Split text into overlapping chunks of at most `max_chars` characters.
     Tries to break at sentence or word boundaries. Ensures no text loss or duplication.
