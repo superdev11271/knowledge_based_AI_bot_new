@@ -114,46 +114,23 @@ class DocumentService:
             raise e
 
     def delete_all_documents(self):
-        """Delete all documents from the database in small batches"""
+        """Delete all documents using TRUNCATE for efficiency"""
         try:
-            total_deleted = 0
-            batch_size = 100  # Batch size of 100
+            # Use SQL function to truncate all tables efficiently
+            result = self.supabase.rpc('truncate_all_documents').execute()
             
-            while True:
-                try:
-                    # Get a small batch of documents to delete
-                    batch_result = self.supabase.table(self.table).select('id').limit(batch_size).execute()
-                    batch_docs = batch_result.data or []
-                    
-                    if not batch_docs:
-                        break  # No more documents to delete
-                    
-                    # Extract IDs from the batch
-                    batch_ids = [doc['id'] for doc in batch_docs]
-                    
-                    # Delete this batch with timeout handling
-                    delete_result = self.supabase.table(self.table).delete().in_('id', batch_ids).execute()
-                    deleted_count = len(delete_result.data or [])
-                    total_deleted += deleted_count
-                    
-                    print(f"Deleted batch of {deleted_count} documents. Total deleted: {total_deleted}")
-                    
-                    # If we deleted fewer documents than requested, we're done
-                    if deleted_count < batch_size:
-                        break
-                        
-                    # Small delay to prevent overwhelming the database
-                    import time
-                    time.sleep(0.1)  # 100ms delay between batches
-                    
-                except Exception as batch_error:
-                    print(f"Error in batch deletion: {batch_error}")
-                    # Continue with next batch even if one fails
-                    continue
-            
-            return total_deleted
+            if result.data and len(result.data) > 0:
+                data = result.data[0]
+                documents_deleted = data.get('deleted_documents_count', 0)
+                chunks_deleted = data.get('deleted_chunks_count', 0)
+                print(f"Truncated {documents_deleted} documents and {chunks_deleted} chunks")
+                return documents_deleted
+            else:
+                print("No documents found to delete")
+                return 0
+                
         except Exception as e:
-            print(f"Error deleting all documents: {str(e)}")
+            print(f"Error truncating all documents: {str(e)}")
             raise e
     
     def update_document_status(self, document_id, status):

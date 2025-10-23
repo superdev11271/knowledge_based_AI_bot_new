@@ -223,50 +223,30 @@ def delete_all_documents():
     try:
         db_service = DocumentService()
         
-        # Delete files and documents in batches to avoid timeouts
-        total_deleted = 0
-        batch_size = 100  # Batch size of 100
+        # Delete all files in uploads directory without fetching document paths
+        import shutil
+        current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
+        app_dir = os.path.dirname(current_dir)
+        uploads_dir = os.path.join(app_dir, UPLOAD_FOLDER)
         
-        while True:
-            try:
-                # Get a small batch of documents
-                batch_docs = db_service.get_documents_paginated(1, batch_size)['documents']
-                
-                if not batch_docs:
-                    break  # No more documents to delete
-                
-                # Delete files from filesystem for this batch
-                for doc in batch_docs:
-                    try:
-                        file_path = doc.get('file_path')
-                        current_dir = os.path.dirname(os.path.abspath(__file__))   # routes/
-                        app_dir = os.path.dirname(current_dir)
-                        file_path = os.path.join(app_dir, file_path)
-                        if file_path and os.path.exists(file_path):
-                            os.remove(file_path)
-                    except Exception:
-                        pass
-                
-                # Delete this batch from database
-                batch_ids = [doc['id'] for doc in batch_docs]
-                deleted_rows = db_service.delete_multiple_documents(batch_ids)
-                batch_deleted = len(deleted_rows)
-                total_deleted += batch_deleted
-                
-                print(f"Deleted batch of {batch_deleted} documents. Total deleted: {total_deleted}")
-                
-                # If we deleted fewer documents than requested, we're done
-                if batch_deleted < batch_size:
-                    break
-                    
-                # Small delay to prevent overwhelming the database
-                import time
-                time.sleep(0.1)  # 100ms delay between batches
-                
-            except Exception as batch_error:
-                print(f"Error in batch deletion: {batch_error}")
-                # Continue with next batch even if one fails
-                continue
+        if os.path.exists(uploads_dir):
+            print(f"Deleting all files in {uploads_dir}...")
+            # Remove all files in uploads directory
+            for filename in os.listdir(uploads_dir):
+                file_path = os.path.join(uploads_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        print(f"Deleted file: {filename}")
+                except Exception as e:
+                    print(f"Error deleting file {filename}: {e}")
+        else:
+            print("Uploads directory does not exist")
+        
+        print("Files deleted from filesystem. Now truncating database tables...")
+        
+        # Use efficient TRUNCATE to delete all database records
+        total_deleted = db_service.delete_all_documents()
         
         return jsonify({
             "message": f"Deleted all {total_deleted} documents successfully",

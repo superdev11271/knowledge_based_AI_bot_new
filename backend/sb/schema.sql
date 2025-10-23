@@ -89,6 +89,30 @@ AS $$
   LIMIT match_count;
 $$;
 
+-- Function to truncate all tables (delete all documents and chunks)
+CREATE OR REPLACE FUNCTION truncate_all_documents()
+RETURNS TABLE (
+  deleted_documents_count bigint,
+  deleted_chunks_count bigint
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  doc_count bigint;
+  chunk_count bigint;
+BEGIN
+  -- Get counts before deletion
+  SELECT COUNT(*) INTO doc_count FROM documents;
+  SELECT COUNT(*) INTO chunk_count FROM document_chunks;
+  
+  -- Truncate the tables
+  TRUNCATE TABLE documents CASCADE;
+  
+  -- Return the counts
+  RETURN QUERY SELECT doc_count, chunk_count;
+END;
+$$;
+
 -- Insert some sample data (optional)
 -- INSERT INTO documents (name, original_name, file_path, file_size, file_size_bytes, file_type, upload_date) 
 -- VALUES 

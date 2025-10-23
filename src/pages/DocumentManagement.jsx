@@ -67,7 +67,7 @@ function DocumentManagement() {
     const filePreview = files.map((file, index) => ({
       id: `preview-${Date.now()}-${index}`,
       name: file.name,
-      size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+      size: formatBytes(file.size),
       type: file.name.split('.').pop().toUpperCase(),
       file: file,
       index: index
@@ -107,7 +107,7 @@ function DocumentManagement() {
     const uploadingFile = {
       id: uploadId,
       name: file.name,
-      size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+      size: formatBytes(file.size),
       type: file.name.split('.').pop().toUpperCase(),
       progress: 0,
       status: 'uploading'
@@ -139,7 +139,7 @@ function DocumentManagement() {
           const newDocument = {
             id: Date.now() + currentIndex,
             name: fileName,
-            size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+            size: formatBytes(file.size),
             uploadDate: new Date().toISOString().split('T')[0],
             type: file.name.split('.').pop().toUpperCase(),
             isFolderUpload: !!file.webkitRelativePath
@@ -294,8 +294,14 @@ function DocumentManagement() {
           // Add to uploaded documents
           if (response.document) {
             uploadedDocuments.push(response.document)
-            // Reload current page to show new documents
-            loadDocuments(currentPage, itemsPerPage)
+            // Update total document count immediately
+            setTotalDocuments(prev => {
+              const newTotal = prev + 1
+              // Update total pages based on new total
+              const newTotalPages = Math.ceil(newTotal / itemsPerPage)
+              setTotalPages(newTotalPages)
+              return newTotal
+            })
           }
           
           // Wait a moment to show completion
