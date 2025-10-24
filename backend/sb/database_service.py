@@ -181,7 +181,7 @@ class DocumentService:
 
             client = OpenAI(api_key=OPENAI_API_KEY)
             query_embedding = client.embeddings.create(
-                model="text-embedding-3-large",
+                model="text-embedding-3-small",
                 input=query_text
             ).data[0].embedding
             # Call Supabase SQL function directly
@@ -189,7 +189,6 @@ class DocumentService:
                 'match_documents',
                 {
                     'query_embedding': query_embedding,
-                    'match_threshold': 0.4,
                     'match_count': top_k
                 }
             ).execute()
@@ -197,17 +196,18 @@ class DocumentService:
             if result.data:
                 formatted_results = []
                 for chunk in result.data:
-                    formatted_results.append({
-                        'id': chunk.get('id'),
-                        'document_id': chunk.get('document_id'),
-                        'chunk_index': chunk.get('chunk_index'),
-                        'content': chunk.get('content'),
-                        'similarity': chunk.get('similarity'),
-                        'document_name': chunk.get('document_name', 'Unknown'),
-                        'document_path': chunk.get('document_path', ''),
-                        'document_type': chunk.get('document_type', ''),
-                        'source_link': f"/documents/{chunk.get('document_id')}"
-                    })
+                    if chunk.get('similarity') > 0.3:
+                        formatted_results.append({
+                            'id': chunk.get('id'),
+                            'document_id': chunk.get('document_id'),
+                            'chunk_index': chunk.get('chunk_index'),
+                            'content': chunk.get('content'),
+                            'similarity': chunk.get('similarity'),
+                            'document_name': chunk.get('document_name', 'Unknown'),
+                            'document_path': chunk.get('document_path', ''),
+                            'document_type': chunk.get('document_type', ''),
+                            'source_link': f"/documents/{chunk.get('document_id')}"
+                        })
                 return formatted_results
             
             return []

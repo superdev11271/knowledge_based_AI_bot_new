@@ -392,7 +392,7 @@ def embed_chunks_openai(chunks: list) -> list:
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    model = "text-embedding-3-large"
+    model = "text-embedding-3-small"
     # OpenAI API supports batching inputs
     resp = client.embeddings.create(model=model, input=chunks)
     vectors = [data.embedding for data in resp.data]
