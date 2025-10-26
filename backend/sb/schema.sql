@@ -53,12 +53,13 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON document_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_chunk_index ON document_chunks(chunk_index);
-
+CREATE INDEX IF NOT EXISTS document_chunks_embedding_hnsw
+ON document_chunks
+USING hnsw (embedding vector_l2_ops);
 
 -- Create vector similarity search function
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(3072),
-  match_threshold float DEFAULT 0.5,
+  query_embedding vector(1536),
   match_count int DEFAULT 5
 )
 RETURNS TABLE (
@@ -71,23 +72,23 @@ RETURNS TABLE (
   document_path text,
   document_type text
 )
-LANGUAGE sql
+LANGUAGE sql STABLE
 AS $$
   SELECT 
     dc.id,
     dc.document_id,
     dc.chunk_index,
     dc.content,
-    1 - (dc.embedding <=> query_embedding) as similarity,
-    d.name as document_name,
-    d.file_path as document_path,
-    d.file_type as document_type
+    1 - (dc.embedding <=> query_embedding) AS similarity,
+    d.name AS document_name,
+    d.file_path AS document_path,
+    d.file_type AS document_type
   FROM document_chunks dc
   JOIN documents d ON dc.document_id = d.id
-  WHERE 1 - (dc.embedding <=> query_embedding) > match_threshold
   ORDER BY dc.embedding <=> query_embedding
   LIMIT match_count;
 $$;
+
 
 -- Function to truncate all tables (delete all documents and chunks)
 CREATE OR REPLACE FUNCTION truncate_all_documents()
