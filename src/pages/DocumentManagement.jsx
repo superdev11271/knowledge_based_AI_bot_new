@@ -25,6 +25,8 @@ function DocumentManagement() {
   const [deleteMessage, setDeleteMessage] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState('')
+  const [failedUploads, setFailedUploads] = useState([])
+  const [showFailedUploadsDialog, setShowFailedUploadsDialog] = useState(false)
 
   // Helpers
   const formatBytes = (bytes) => {
@@ -254,7 +256,7 @@ function DocumentManagement() {
       // Upload files one by one
       const files = pendingFiles.map(f => f.file)
       const uploadedDocuments = []
-      const errors = []
+      const failedUploads = []
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
@@ -308,7 +310,13 @@ function DocumentManagement() {
           await new Promise(resolve => setTimeout(resolve, 500))
           
         } catch (fileError) {
-          errors.push(`Failed to upload ${fileInfo.name}: ${fileError.message}`)
+          // Add to failed uploads with detailed info
+          failedUploads.push({
+            name: fileInfo.name,
+            size: fileInfo.size,
+            error: fileError.message,
+            file: file
+          })
           console.error(`Failed to upload ${fileInfo.name}:`, fileError)
         }
       }
@@ -323,8 +331,10 @@ function DocumentManagement() {
         setTimeout(() => setUploadComplete(false), 3000)
       }
       
-      if (errors.length > 0) {
-        setError(`Upload completed with ${errors.length} errors: ${errors.join(', ')}`)
+      // Show failed uploads dialog if there are any failures
+      if (failedUploads.length > 0) {
+        setFailedUploads(failedUploads)
+        setShowFailedUploadsDialog(true)
       }
       
     } catch (err) {
@@ -340,6 +350,73 @@ function DocumentManagement() {
   const cancelUpload = () => {
     setShowUploadConfirm(false)
     setPendingFiles([])
+  }
+
+  const retryFailedUpload = async (failedFile) => {
+    try {
+      setIsUploading(true)
+      setError(null)
+      
+      // Show single file upload progress
+      setUploadingFiles([{
+        id: Date.now(),
+        name: failedFile.name,
+        size: failedFile.size,
+        progress: 0,
+        status: 'uploading',
+        isFolderUpload: false
+      }])
+      
+      const response = await api.uploadFile(failedFile.file, (progressEvent) => {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+        setUploadingFiles(prev => prev.map(f => 
+          f.id === Date.now() 
+            ? { ...f, progress: percentCompleted, status: percentCompleted === 100 ? 'processing' : 'uploading' }
+            : f
+        ))
+      })
+      
+      // Update progress to completed
+      setUploadingFiles(prev => prev.map(f => 
+        f.id === Date.now() 
+          ? { ...f, progress: 100, status: 'completed' }
+          : f
+      ))
+      
+      // Update total document count
+      if (response.document) {
+        setTotalDocuments(prev => {
+          const newTotal = prev + 1
+          const newTotalPages = Math.ceil(newTotal / itemsPerPage)
+          setTotalPages(newTotalPages)
+          return newTotal
+        })
+      }
+      
+      // Remove from failed uploads
+      setFailedUploads(prev => {
+        const updated = prev.filter(f => f.name !== failedFile.name)
+        // Close dialog if no more failed uploads
+        if (updated.length === 0) {
+          setShowFailedUploadsDialog(false)
+        }
+        return updated
+      })
+      
+      // Show success notification
+      setUploadComplete(true)
+      setTimeout(() => setUploadComplete(false), 3000)
+      
+      // Wait a moment to show completion
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+    } catch (error) {
+      setError(`Failed to retry upload: ${error.message}`)
+      console.error('Retry upload failed:', error)
+    } finally {
+      setIsUploading(false)
+      setUploadingFiles([])
+    }
   }
 
   const handleSelectDocument = (id) => {
@@ -891,6 +968,113 @@ function DocumentManagement() {
                 className="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors font-medium"
               >
                 Upload Files
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Failed Uploads Dialog */}
+      {showFailedUploadsDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4 text-white">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold">Upload Failed</h3>
+                  <p className="text-sm text-red-100">
+                    {failedUploads.length} file{failedUploads.length !== 1 ? 's' : ''} failed to upload
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 max-h-96 overflow-y-auto">
+              <div className="mb-4">
+                <h4 className="text-lg font-medium text-gray-900 mb-2">Failed Files</h4>
+                <p className="text-sm text-gray-600">
+                  The following files encountered errors during upload:
+                </p>
+              </div>
+
+              {/* Failed Files List */}
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {failedUploads.map((failedFile, index) => (
+                  <div key={index} className="flex items-start p-3 bg-red-50 rounded-lg border border-red-200">
+                    <div className="flex-shrink-0 mr-3 mt-1">
+                      <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {failedFile.name}
+                      </p>
+                      <p className="text-xs text-gray-500 mb-1">
+                        {formatBytes(failedFile.size)}
+                      </p>
+                      <p className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded mb-2">
+                        Error: {failedFile.error}
+                      </p>
+                      <button
+                        onClick={() => retryFailedUpload(failedFile)}
+                        disabled={isUploading}
+                        className="text-xs bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white px-3 py-1 rounded transition-colors"
+                      >
+                        {isUploading ? 'Retrying...' : 'Retry'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary */}
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex items-center space-x-2">
+                  <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-red-900">
+                      {failedUploads.length} file{failedUploads.length !== 1 ? 's' : ''} failed
+                    </p>
+                    <p className="text-xs text-red-700">
+                      You can try uploading these files again individually
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowFailedUploadsDialog(false)}
+                className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setShowFailedUploadsDialog(false)
+                  // Retry failed uploads
+                  const retryFiles = failedUploads.map(f => f.file)
+                  if (retryFiles.length > 0) {
+                    handleFileUpload({ target: { files: retryFiles } })
+                  }
+                }}
+                className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
+              >
+                Retry Failed Files
               </button>
             </div>
           </div>
